@@ -122,7 +122,33 @@ public class VectorIndexService {
      * @throws Exception 索引失败时抛出异常
      */
     public void indexSingleFile(String filePath) throws Exception {
+        indexSingleFile(filePath, filePath, null);
+    }
+
+    /**
+     * 读取指定文件的内容，并以 logicalSourcePath 作为知识库中该资料的正式来源路径。
+     */
+    public void indexSingleFile(String filePath, String logicalSourcePath) throws Exception {
+        Path contentPath = Paths.get(filePath).normalize();
+        Path sourcePath = Paths.get(logicalSourcePath).normalize();
+        String rollbackFilePath = null;
+        if (!contentPath.toAbsolutePath().equals(sourcePath.toAbsolutePath())
+                && Files.isRegularFile(sourcePath)) {
+            rollbackFilePath = sourcePath.toString();
+        }
+        indexSingleFile(filePath, logicalSourcePath, rollbackFilePath);
+    }
+
+    /**
+     * 索引正式文件；rollbackFilePath 指向被替换前的旧文件，用于写入失败时恢复旧向量。
+     */
+    public void indexSingleFile(
+            String filePath,
+            String logicalSourcePath,
+            String rollbackFilePath
+    ) throws Exception {
         Path path = Paths.get(filePath).normalize();
+        Path sourcePath = Paths.get(logicalSourcePath).normalize();
         File file = path.toFile();
         
         if (!file.exists() || !file.isFile()) {
@@ -135,42 +161,100 @@ public class VectorIndexService {
         String content = Files.readString(path);
         logger.info("读取文件: {}, 内容长度: {} 字符", path, content.length());
 
-        // 2. 删除该文件的旧数据（如果存在）
-        deleteExistingData(path.toString());
+        // 2. 先准备新资料的全部向量；此阶段不触碰 Milvus。
+        List<PreparedChunk> newChunks = prepareChunks(content, sourcePath.toString());
 
-        // 3. 文档分片
-        List<DocumentChunk> chunks = chunkService.chunkDocument(content, path.toString());
-        logger.info("文档分片完成: {} -> {} 个分片", filePath, chunks.size());
-
-        // 4. 为每个分片生成向量并插入 Milvus
-        for (int i = 0; i < chunks.size(); i++) {
-            DocumentChunk chunk = chunks.get(i);
-            
-            try {
-                // 生成向量
-                List<Float> vector = embeddingService.generateEmbedding(chunk.getContent());
-
-                // 构建元数据（包含文件信息）
-                Map<String, Object> metadata = buildMetadata(path.toString(), chunk, chunks.size());
-
-                // 插入到 Milvus
-                insertToMilvus(chunk.getContent(), vector, metadata, chunk.getChunkIndex());
-                
-                logger.info("✓ 分片 {}/{} 索引成功", i + 1, chunks.size());
-
-            } catch (Exception e) {
-                logger.error("✗ 分片 {}/{} 索引失败", i + 1, chunks.size(), e);
-                throw new RuntimeException("分片索引失败: " + e.getMessage(), e);
+        // 3. 同名资料更新时，也提前准备旧资料的向量备份，用于后续补偿。
+        List<PreparedChunk> oldChunks = Collections.emptyList();
+        if (rollbackFilePath != null) {
+            Path rollbackPath = Paths.get(rollbackFilePath).normalize();
+            if (Files.isRegularFile(rollbackPath)) {
+                oldChunks = prepareChunks(Files.readString(rollbackPath), sourcePath.toString());
             }
         }
 
-        logger.info("文件索引完成: {}, 共 {} 个分片", filePath, chunks.size());
+        // 4. 两份向量都准备好后，才替换 Milvus 中的正式资料。
+        deleteExistingData(sourcePath.toString());
+        try {
+            insertPreparedChunks(newChunks);
+        } catch (Exception indexingException) {
+            logger.error("新资料索引失败，开始恢复旧资料: {}", sourcePath, indexingException);
+            restoreOldVectors(sourcePath.toString(), oldChunks, indexingException);
+            throw indexingException;
+        }
+
+        logger.info("文件索引完成: {}, 共 {} 个分片", filePath, newChunks.size());
+    }
+
+    private List<PreparedChunk> prepareChunks(String content, String logicalSourcePath) {
+        List<DocumentChunk> chunks = chunkService.chunkDocument(content, logicalSourcePath);
+        logger.info("文档分片完成: {} -> {} 个分片", logicalSourcePath, chunks.size());
+
+        List<PreparedChunk> preparedChunks = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            DocumentChunk chunk = chunks.get(i);
+            try {
+                List<Float> vector = embeddingService.generateEmbedding(chunk.getContent());
+                Map<String, Object> metadata = buildMetadata(logicalSourcePath, chunk, chunks.size());
+                preparedChunks.add(new PreparedChunk(chunk.getContent(), vector, metadata, chunk.getChunkIndex()));
+            } catch (Exception e) {
+                logger.error("✗ 分片 {}/{} 向量准备失败", i + 1, chunks.size(), e);
+                throw new RuntimeException("分片向量准备失败: " + e.getMessage(), e);
+            }
+        }
+        return preparedChunks;
+    }
+
+    private void insertPreparedChunks(List<PreparedChunk> preparedChunks) {
+        for (int i = 0; i < preparedChunks.size(); i++) {
+            PreparedChunk preparedChunk = preparedChunks.get(i);
+            try {
+                insertToMilvus(
+                        preparedChunk.content(),
+                        preparedChunk.vector(),
+                        preparedChunk.metadata(),
+                        preparedChunk.chunkIndex()
+                );
+                logger.info("✓ 分片 {}/{} 索引成功", i + 1, preparedChunks.size());
+            } catch (Exception e) {
+                logger.error("✗ 分片 {}/{} 索引失败", i + 1, preparedChunks.size(), e);
+                throw new RuntimeException("分片索引失败: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    private void restoreOldVectors(String logicalSourcePath, List<PreparedChunk> oldChunks, Exception indexingException) {
+        try {
+            deleteExistingData(logicalSourcePath);
+        } catch (Exception cleanupException) {
+            indexingException.addSuppressed(cleanupException);
+            logger.error("清理部分新向量失败: {}", logicalSourcePath, cleanupException);
+            return;
+        }
+
+        if (oldChunks.isEmpty()) {
+            return;
+        }
+
+        try {
+            insertPreparedChunks(oldChunks);
+            logger.info("旧资料向量恢复成功: {}", logicalSourcePath);
+        } catch (Exception restoreException) {
+            indexingException.addSuppressed(restoreException);
+            logger.error("旧资料向量恢复失败: {}", logicalSourcePath, restoreException);
+            try {
+                deleteExistingData(logicalSourcePath);
+            } catch (Exception finalCleanupException) {
+                indexingException.addSuppressed(finalCleanupException);
+                logger.error("清理部分恢复的旧向量失败: {}", logicalSourcePath, finalCleanupException);
+            }
+        }
     }
 
     /**
      * 删除文件的旧数据（根据 metadata._source）
      */
-    private void deleteExistingData(String filePath) {
+    private void deleteExistingData(String filePath) throws Exception {
         try {
             // 使用统一的路径分隔符（正斜杠）用于Milvus存储，避免表达式解析错误
             // 将系统路径转换为统一格式
@@ -191,8 +275,7 @@ public class VectorIndexService {
 
             // 状态码 65535 表示集合已经加载，这不是错误
             if (loadResponse.getStatus() != 0 && loadResponse.getStatus() != 65535) {
-                logger.warn("加载 collection 失败: {}", loadResponse.getMessage());
-                return;
+                throw new RuntimeException("加载 collection 失败: " + loadResponse.getMessage());
             }
 
             DeleteParam deleteParam = DeleteParam.newBuilder()
@@ -203,14 +286,14 @@ public class VectorIndexService {
             R<MutationResult> response = milvusClient.delete(deleteParam);
 
             if (response.getStatus() != 0) {
-                logger.warn("删除旧数据时出现警告: {}", response.getMessage());
+                throw new RuntimeException("删除旧数据失败: " + response.getMessage());
             } else {
-                long deletedCount = response.getData().getDeleteCnt();
-                logger.info("✓ 已删除文件的旧数据: {}, 删除记录数: {}", normalizedPath, deletedCount);
+                logger.info("✓ 已删除文件的旧数据: {}", normalizedPath);
             }
 
         } catch (Exception e) {
-            logger.warn("删除旧数据失败（可能是首次索引）: {}", e.getMessage());
+            logger.error("删除旧数据失败: {}", filePath, e);
+            throw e;
         }
     }
 
@@ -306,6 +389,14 @@ public class VectorIndexService {
             logger.error("插入向量到 Milvus 失败", e);
             throw e;
         }
+    }
+
+    private record PreparedChunk(
+            String content,
+            List<Float> vector,
+            Map<String, Object> metadata,
+            int chunkIndex
+    ) {
     }
 
     /**
