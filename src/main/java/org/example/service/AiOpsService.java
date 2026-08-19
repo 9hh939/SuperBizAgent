@@ -7,7 +7,6 @@ import com.alibaba.cloud.ai.graph.agent.flow.agent.SupervisorAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import org.example.agent.tool.DateTimeTools;
 import org.example.agent.tool.InternalDocsTools;
-import org.example.agent.tool.QueryLogsTools;
 import org.example.agent.tool.QueryMetricsTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,19 +36,20 @@ public class AiOpsService {
     @Autowired
     private QueryMetricsTools queryMetricsTools;
 
-    @Autowired(required = false)  // Mock 模式下才注册
-    private QueryLogsTools queryLogsTools;
+    @Autowired
+    private AgentToolSelector agentToolSelector;
 
     /**
      * 执行 AI Ops 告警分析流程
      *
      * @param chatModel      大模型实例
-     * @param toolCallbacks  工具回调数组
      * @return 分析结果状态
      * @throws GraphRunnerException 如果 Agent 执行失败
      */
-    public Optional<OverAllState> executeAiOpsAnalysis(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) throws GraphRunnerException {
+    public Optional<OverAllState> executeAiOpsAnalysis(DashScopeChatModel chatModel) throws GraphRunnerException {
         logger.info("开始执行 AI Ops 多 Agent 协作流程");
+
+        ToolCallback[] toolCallbacks = agentToolSelector.toolCallbacks();
 
         // 构建 Planner 和 Executor Agent
         ReactAgent plannerAgent = buildPlannerAgent(chatModel, toolCallbacks);
@@ -125,17 +125,10 @@ public class AiOpsService {
     }
 
     /**
-     * 动态构建方法工具数组
-     * 根据 cls.mock-enabled 决定是否包含 QueryLogsTools
+     * 构建本地方法工具数组
      */
     private Object[] buildMethodToolsArray() {
-        if (queryLogsTools != null) {
-            // Mock 模式：包含 QueryLogsTools
-            return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
-        } else {
-            // 真实模式：不包含 QueryLogsTools（由 MCP 提供日志查询功能）
-            return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools};
-        }
+        return agentToolSelector.methodTools(dateTimeTools, internalDocsTools, queryMetricsTools);
     }
 
     /**
