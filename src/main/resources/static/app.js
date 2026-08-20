@@ -616,10 +616,6 @@ class SuperBizAgentApp {
                 })
             });
 
-            if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status}`);
-            }
-
             const data = await response.json();
             console.log('[sendQuickMessage] 响应数据:', JSON.stringify(data));
             
@@ -627,9 +623,14 @@ class SuperBizAgentApp {
             if (loadingMessage && loadingMessage.parentNode) {
                 loadingMessage.parentNode.removeChild(loadingMessage);
             }
+
+            // HTTP 状态表示请求整体是否成功；错误详情统一读取外层 message。
+            if (!response.ok) {
+                throw new Error(data.message || `请求失败（HTTP ${response.status}）`);
+            }
             
-            // 统一响应格式：检查 data.code 或 data.message 判断请求是否成功
-            if (data.code === 200 || data.message === 'success') {
+            // HTTP 成功后，响应体中的 code 也应当明确表示成功。
+            if (data.code === 200) {
                 // data.data 是 ChatResponse 对象
                 const chatResponse = data.data;
                 
@@ -637,16 +638,11 @@ class SuperBizAgentApp {
                     // 成功：添加实际响应消息（即使 answer 为空也显示）
                     const answer = chatResponse.answer || '（无回复内容）';
                     this.addMessage('assistant', answer);
-                } else if (chatResponse && chatResponse.errorMessage) {
-                    // 业务错误
-                    throw new Error(chatResponse.errorMessage);
                 } else {
-                    // 兜底：尝试显示任何可用内容
-                    const fallbackAnswer = chatResponse?.answer || chatResponse?.errorMessage || '服务返回了空内容';
-                    this.addMessage('assistant', fallbackAnswer);
+                    throw new Error('服务返回了无效响应');
                 }
             } else {
-                // HTTP 成功但业务失败
+                // 防御后端 HTTP 状态与响应体 code 不一致的异常情况
                 throw new Error(data.message || '请求失败');
             }
         } catch (error) {

@@ -15,6 +15,7 @@ import org.example.service.ChatService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -64,7 +65,8 @@ public class ChatController {
             // 参数校验
             if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
                 logger.warn("问题内容为空");
-                return ResponseEntity.ok(ApiResponse.success(ChatResponse.error("问题内容不能为空")));
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(ApiResponse.error(HttpStatus.BAD_REQUEST, "问题内容不能为空"));
             }
 
             // 获取或创建会话
@@ -101,7 +103,10 @@ public class ChatController {
 
         } catch (Exception e) {
             logger.error("对话失败", e);
-            return ResponseEntity.ok(ApiResponse.success(ChatResponse.error(e.getMessage())));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error(
+                            HttpStatus.INTERNAL_SERVER_ERROR,
+                            "对话服务暂时不可用，请稍后重试"));
         }
     }
 
@@ -546,19 +551,11 @@ public class ChatController {
     public static class ChatResponse {
         private boolean success;
         private String answer;
-        private String errorMessage;
 
         public static ChatResponse success(String answer) {
             ChatResponse response = new ChatResponse();
             response.setSuccess(true);
             response.setAnswer(answer);
-            return response;
-        }
-
-        public static ChatResponse error(String errorMessage) {
-            ChatResponse response = new ChatResponse();
-            response.setSuccess(false);
-            response.setErrorMessage(errorMessage);
             return response;
         }
     }
@@ -612,8 +609,12 @@ public class ChatController {
         }
 
         public static <T> ApiResponse<T> error(String message) {
+            return error(HttpStatus.INTERNAL_SERVER_ERROR, message);
+        }
+
+        public static <T> ApiResponse<T> error(HttpStatus status, String message) {
             ApiResponse<T> response = new ApiResponse<>();
-            response.setCode(500);
+            response.setCode(status.value());
             response.setMessage(message);
             return response;
         }
