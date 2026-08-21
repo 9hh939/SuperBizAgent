@@ -1096,13 +1096,14 @@ class SuperBizAgentApp {
     }
 
     // 发送智能运维请求（SSE 流式模式）
-    async sendAIOpsRequest(loadingMessageElement) {
+    async sendAIOpsRequest(loadingMessageElement, userRequest) {
         try {
             const response = await fetch(`${this.apiBaseUrl}/ai_ops`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                }
+                },
+                body: JSON.stringify({ userRequest })
             });
 
             if (!response.ok) {
@@ -1442,6 +1443,8 @@ class SuperBizAgentApp {
             return;
         }
 
+        const userRequest = this.messageInput ? this.messageInput.value.trim() : '';
+
         // 新建对话
         this.newChat();
         
@@ -1454,7 +1457,7 @@ class SuperBizAgentApp {
         this.updateUI();
 
         try {
-            await this.sendAIOpsRequest(loadingMessage);
+            await this.sendAIOpsRequest(loadingMessage, userRequest);
         } catch (error) {
             console.error('智能运维分析失败:', error);
             // 更新消息为错误信息
