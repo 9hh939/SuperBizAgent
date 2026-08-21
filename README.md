@@ -41,7 +41,6 @@ SuperBizAgent/
 │   ├── service/
 │   │   ├── ChatService.java           # 对话服务 ⭐
 │   │   ├── AiOpsService.java          # AIOps 服务 ⭐
-│   │   ├── RagService.java            # RAG 服务
 │   │   └── Vector*.java               # 向量服务
 │   ├── agent/tool/                    # Agent 工具集
 │   │   ├── DateTimeTools.java         # 时间工具
