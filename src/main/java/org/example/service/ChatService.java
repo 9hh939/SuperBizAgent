@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -39,17 +38,8 @@ public class ChatService {
     @Autowired
     private AgentToolSelector agentToolSelector;
 
-    @Value("${spring.ai.dashscope.api-key}")
-    private String dashScopeApiKey;
-
-    /**
-     * 创建 DashScope API 实例
-     */
-    public DashScopeApi createDashScopeApi() {
-        return DashScopeApi.builder()
-                .apiKey(dashScopeApiKey)
-                .build();
-    }
+    @Autowired
+    private DashScopeApi dashScopeApi;
 
     /**
      * 创建 ChatModel
@@ -57,7 +47,7 @@ public class ChatService {
      * @param maxToken 最大输出长度
      * @param topP 核采样参数
      */
-    public DashScopeChatModel createChatModel(DashScopeApi dashScopeApi, double temperature, int maxToken, double topP) {
+    public DashScopeChatModel createChatModel(double temperature, int maxToken, double topP) {
         return DashScopeChatModel.builder()
                 .dashScopeApi(dashScopeApi)
                 .defaultOptions(DashScopeChatOptions.builder()
@@ -72,8 +62,15 @@ public class ChatService {
     /**
      * 创建标准对话 ChatModel（默认参数）
      */
-    public DashScopeChatModel createStandardChatModel(DashScopeApi dashScopeApi) {
-        return createChatModel(dashScopeApi, 0.7, 2000, 0.9);
+    public DashScopeChatModel createStandardChatModel() {
+        return createChatModel(0.7, 2000, 0.9);
+    }
+
+    /**
+     * 创建 AI Ops 使用的 ChatModel。
+     */
+    public DashScopeChatModel createAiOpsChatModel() {
+        return createChatModel(0.3, 8000, 0.9);
     }
 
     /**

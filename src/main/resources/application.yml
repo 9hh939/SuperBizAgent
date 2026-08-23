@@ -24,9 +24,6 @@ spring:
   ai:
     dashscope:
       api-key: "${DASHSCOPE_API_KEY}"  # 从环境变量读取或使用默认值
-      chat:
-        options:
-          timeout: 180000  # 超时时间180秒（3分钟）
       retry:
         max-attempts: 3  # 最大重试次数
         backoff:
@@ -49,8 +46,11 @@ spring:
               url: http://localhost:3000
               sse-endpoint: /sse  # 完整的SSE端点路径
 
-# 阿里云 DashScope Embedding API 配置
+# 阿里云 DashScope 通用网络与 Embedding API 配置
 dashscope:
+  http:
+    connect-timeout: 10s
+    response-timeout: 180s
   api:
     key: "${DASHSCOPE_API_KEY}"  # 从环境变量读取或使用默认值（用于自定义配置）
   embedding:

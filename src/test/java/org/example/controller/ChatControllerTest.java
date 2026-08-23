@@ -1,6 +1,5 @@
 package org.example.controller;
 
-import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import org.example.dto.AIOpsRequest;
 import org.example.service.AiOpsService;
@@ -44,7 +43,7 @@ class ChatControllerTest {
     void chatReturnsSafeServerErrorWhenChatServiceFails() {
         ChatController controller = new ChatController();
         ChatService chatService = mock(ChatService.class);
-        when(chatService.createDashScopeApi())
+        when(chatService.createStandardChatModel())
                 .thenThrow(new RuntimeException("sensitive provider detail"));
         ReflectionTestUtils.setField(controller, "chatService", chatService);
 
@@ -67,7 +66,8 @@ class ChatControllerTest {
     void aiOpsPassesUserTaskToService() throws Exception {
         ChatController controller = new ChatController();
         ChatService chatService = mock(ChatService.class);
-        when(chatService.createDashScopeApi()).thenReturn(mock(DashScopeApi.class));
+        DashScopeChatModel chatModel = mock(DashScopeChatModel.class);
+        when(chatService.createAiOpsChatModel()).thenReturn(chatModel);
         ReflectionTestUtils.setField(controller, "chatService", chatService);
 
         AiOpsService aiOpsService = mock(AiOpsService.class);
