@@ -17,7 +17,7 @@
 - ✅ **RAG 问答**: 向量检索 + 多轮对话 + 流式输出
 - ✅ **AIOps 运维**: 智能诊断 + 多 Agent 协作 + 自动报告
 - ✅ **工具集成**: 文档检索、告警查询、日志分析、时间工具
-- ✅ **会话管理**: 上下文维护、历史管理、自动清理
+- ✅ **会话管理**: H2 持久化、重启恢复、历史窗口管理
 - ✅ **Web 界面**: 提供测试界面和 RESTful API
 
 
@@ -94,6 +94,13 @@ POST /api/ai_ops
 
 - `POST /api/chat/clear` - 清空会话历史
 - `GET /api/chat/session/{sessionId}` - 获取会话信息
+- `DELETE /api/chat/session/{sessionId}` - 删除会话及其持久化消息
+
+普通聊天和流式聊天共用同一份后端会话上下文。默认仅保留最近 6 对用户/AI 消息，
+数据写入本地 H2 文件数据库；浏览器 `localStorage` 继续负责页面历史展示。
+
+> 当前会话管理面向本地演示环境：`sessionId` 只是会话定位符，不是身份凭证。
+> 项目尚未实现登录、RBAC 或多租户隔离，生产部署需要接入认证并按用户/租户校验会话归属。
 
 ### 4. 文件管理
 
@@ -116,6 +123,8 @@ milvus:
 
 # 阿里云 DashScope
 spring:
+  datasource:
+    url: "jdbc:h2:file:./data/chat-history;DB_CLOSE_ON_EXIT=FALSE"
   ai:
     dashscope:
       api-key: "${DASHSCOPE_API_KEY}" // 环境变量
@@ -124,6 +133,10 @@ spring:
 rag:
   top-k: 3
   model: "qwen3-max"
+
+chat:
+  history:
+    max-message-pairs: 6
 
 # 文档分片
 document:

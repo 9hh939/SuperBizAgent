@@ -47,6 +47,9 @@ logs/
 ### Upload Files ###
 uploads/
 
+### Local Chat History Database ###
+/data/
+
 ### Local credentials ###
 evn/
 

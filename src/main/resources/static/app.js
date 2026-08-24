@@ -456,19 +456,35 @@ class SuperBizAgentApp {
     }
     
     // 删除历史对话
-    deleteChatHistory(historyId) {
-        this.chatHistories = this.chatHistories.filter(h => h.id !== historyId);
-        this.saveChatHistories();
-        this.renderChatHistory();
-        
-        // 如果删除的是当前对话，清空当前对话
-        if (this.sessionId === historyId) {
-            this.currentChatHistory = [];
-            if (this.chatMessages) {
-                this.chatMessages.innerHTML = '';
+    async deleteChatHistory(historyId) {
+        try {
+            const response = await fetch(
+                `${this.apiBaseUrl}/chat/session/${encodeURIComponent(historyId)}`,
+                { method: 'DELETE' }
+            );
+            const data = await response.json();
+            if (!response.ok || data.code !== 200) {
+                throw new Error(data.message || `删除失败（HTTP ${response.status}）`);
             }
-            this.sessionId = this.generateSessionId();
-            this.checkAndSetCentered();
+
+            // 后端删除成功后再删除浏览器展示历史，避免两个数据源永久分叉。
+            this.chatHistories = this.chatHistories.filter(h => h.id !== historyId);
+            this.saveChatHistories();
+            this.renderChatHistory();
+
+            // 如果删除的是当前对话，清空当前对话
+            if (this.sessionId === historyId) {
+                this.currentChatHistory = [];
+                this.isCurrentChatFromHistory = false;
+                if (this.chatMessages) {
+                    this.chatMessages.innerHTML = '';
+                }
+                this.sessionId = this.generateSessionId();
+                this.checkAndSetCentered();
+            }
+        } catch (error) {
+            console.error('删除历史对话失败:', error);
+            this.showNotification('删除历史对话失败：' + error.message, 'error');
         }
     }
 

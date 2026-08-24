@@ -21,6 +21,15 @@ milvus:
 
 # Spring AI Alibaba DashScope 配置
 spring:
+  datasource:
+    url: "${CHAT_HISTORY_DB_URL:jdbc:h2:file:./data/chat-history;DB_CLOSE_ON_EXIT=FALSE}"
+    driver-class-name: org.h2.Driver
+    username: "${CHAT_HISTORY_DB_USERNAME:sa}"
+    password: "${CHAT_HISTORY_DB_PASSWORD:}"
+  sql:
+    init:
+      mode: always
+
   ai:
     dashscope:
       api-key: "${DASHSCOPE_API_KEY}"  # 从环境变量读取或使用默认值
@@ -75,3 +84,8 @@ prometheus:
 # CLS 云日志服务配置
 cls:
   mock-enabled: false  # 是否启用 Mock 模式（用于测试，设为 true 返回与告警关联的模拟日志数据）
+
+# 普通聊天模型上下文配置（用户消息 + AI 回复 = 1 对）
+chat:
+  history:
+    max-message-pairs: "${CHAT_HISTORY_MAX_MESSAGE_PAIRS:6}"

@@ -8,6 +8,7 @@ import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import org.example.agent.tool.DateTimeTools;
 import org.example.agent.tool.InternalDocsTools;
 import org.example.agent.tool.QueryMetricsTools;
+import org.example.model.ChatHistoryMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
@@ -15,7 +16,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 聊天服务
@@ -78,7 +78,7 @@ public class ChatService {
      * @param history 历史消息列表
      * @return 完整的系统提示词
      */
-    public String buildSystemPrompt(List<Map<String, String>> history) {
+    public String buildSystemPrompt(List<ChatHistoryMessage> history) {
         StringBuilder systemPromptBuilder = new StringBuilder();
         
         // 基础系统提示
@@ -91,9 +91,9 @@ public class ChatService {
         // 添加历史消息
         if (!history.isEmpty()) {
             systemPromptBuilder.append("--- 对话历史 ---\n");
-            for (Map<String, String> msg : history) {
-                String role = msg.get("role");
-                String content = msg.get("content");
+            for (ChatHistoryMessage msg : history) {
+                String role = msg.role();
+                String content = msg.content();
                 if ("user".equals(role)) {
                     systemPromptBuilder.append("用户: ").append(content).append("\n");
                 } else if ("assistant".equals(role)) {
